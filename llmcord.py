@@ -46,6 +46,7 @@ httpx_client = httpx.AsyncClient()
 
 msg_nodes = {}
 last_task_time = 0
+last_random_reply_time = 0
 
 
 @dataclass
@@ -66,12 +67,22 @@ class MsgNode:
 
 @discord_client.event
 async def on_message(new_msg):
-    global msg_nodes, last_task_time
+    global msg_nodes, last_task_time, last_random_reply_time
 
     is_dm = new_msg.channel.type == discord.ChannelType.private
 
-    if (not is_dm and discord_client.user not in new_msg.mentions) or new_msg.author.bot:
+    if new_msg.author.bot:
         return
+
+    cfg = get_config()
+    interval = cfg.get("random_response_interval", 60)
+    now = dt.now().timestamp()
+
+    is_mention = is_dm or discord_client.user in new_msg.mentions
+    if not is_mention:
+        if now - last_random_reply_time < interval:
+            return
+        last_random_reply_time = now
 
     role_ids = set(role.id for role in getattr(new_msg.author, "roles", ()))
     channel_ids = set(filter(None, (new_msg.channel.id, getattr(new_msg.channel, "parent_id", None), getattr(new_msg.channel, "category_id", None))))
