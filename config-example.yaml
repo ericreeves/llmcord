@@ -10,7 +10,8 @@ max_messages: 25
 
 use_plain_responses: false
 allow_dms: true
-allow_bots: false
+
+random_response_interval: 300
 
 permissions:
   users:
