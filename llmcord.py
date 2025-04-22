@@ -9,6 +9,7 @@ import discord
 import httpx
 from openai import AsyncOpenAI
 import yaml
+import re
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,6 +26,23 @@ STREAMING_INDICATOR = " ⚪"
 EDIT_DELAY_SECONDS = 1
 
 MAX_MESSAGE_NODES = 100
+ 
+def replace_custom_emoji_in_text(text: str, channel) -> str:
+    """Replace occurrences of :name: in text with proper Discord custom emoji mentions."""
+    pattern = re.compile(r":([a-zA-Z0-9_]+):")
+    def _replacer(match):
+        name = match.group(1)
+        emoji_obj = None
+        if hasattr(channel, "guild") and channel.guild:
+            emoji_obj = discord.utils.get(channel.guild.emojis, name=name)
+        if not emoji_obj:
+            emoji_obj = discord.utils.get(discord_client.emojis, name=name)
+        if emoji_obj:
+            if getattr(emoji_obj, "animated", False):
+                return f"<a:{emoji_obj.name}:{emoji_obj.id}>"
+            return f"<:{emoji_obj.name}:{emoji_obj.id}>"
+        return match.group(0)
+    return pattern.sub(_replacer, text)
 
 
 def get_config(filename="config.yaml"):
@@ -254,7 +272,9 @@ async def on_message(new_msg):
                         if edit_task != None:
                             await edit_task
 
-                        embed.description = response_contents[-1] if is_final_edit else (response_contents[-1] + STREAMING_INDICATOR)
+                        # Replace custom emoji shortcodes in embed description
+                        raw_desc = response_contents[-1] if is_final_edit else (response_contents[-1] + STREAMING_INDICATOR)
+                        embed.description = replace_custom_emoji_in_text(raw_desc, new_msg.channel)
                         embed.color = EMBED_COLOR_COMPLETE if msg_split_incoming or is_good_finish else EMBED_COLOR_INCOMPLETE
 
                         if start_next_msg:
@@ -270,9 +290,11 @@ async def on_message(new_msg):
                         last_task_time = dt.now().timestamp()
 
             if use_plain_responses:
-                for content in response_contents:
+                for raw_content in response_contents:
+                    # Replace custom emoji shortcodes in plain text response
+                    processed_content = replace_custom_emoji_in_text(raw_content, new_msg.channel)
                     reply_to_msg = new_msg if response_msgs == [] else response_msgs[-1]
-                    response_msg = await reply_to_msg.reply(content=content, suppress_embeds=True)
+                    response_msg = await reply_to_msg.reply(content=processed_content, suppress_embeds=True)
                     response_msgs.append(response_msg)
 
                     msg_nodes[response_msg.id] = MsgNode(parent_msg=new_msg)
